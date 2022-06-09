@@ -12,11 +12,11 @@ class Renal:
         self.tumor_num = tumor_num
         self.none_num = 0
         self.spacing = self.image.GetSpacing()
+        self.tumor_count = np.count_nonzero(self.matrix == self.tumor_num)
 
     def get_radius(self):
         avg_spacing = np.power(self.spacing[0] * self.spacing[1] * self.spacing[2], 1. / 3.)
-        tumor_count = np.count_nonzero(self.matrix == self.tumor_num)
-        radius_pixels = np.power(0.75 * tumor_count / np.pi, 1. / 3.)
+        radius_pixels = np.power(0.75 * self.tumor_count / np.pi, 1. / 3.)
         radius = avg_spacing * radius_pixels
 
         return radius
@@ -30,7 +30,7 @@ class Renal:
                     if self.matrix[z][y][x] == self.tumor_num and self._inside_kidney_periphery(x, y, z):
                         inside += 1
 
-        return inside / (self.shape[0] * self.shape[1] * self.shape[2])
+        return inside / self.tumor_count
 
     def _inside_kidney_periphery(self, x, y, z):
 
@@ -98,58 +98,6 @@ class Renal:
 
         return faces_count > 1
 
-"""
-    def _inside_kidney_periphery_beta(self, x, y, z):
-        x_it_flag = False
-        for x_it in range(x, self.shape[0]):
-            content = self.matrix[z][y][x_it]
-            if content == self.none_num:
-                break
-            if content == self.kidney_num:
-                x_it_flag = True
-                break
-        if x_it_flag:
-            for x_it in range(x, -1, -1):
-                content = self.matrix[z][y][x_it]
-                if content == self.none_num:
-                    break
-                if content == self.kidney_num:
-                    return True
-
-        y_it_flag = False
-        for y_it in range(y, self.shape[1]):
-            content = self.matrix[z][y_it][x]
-            if content == self.none_num:
-                break
-            if content == self.kidney_num:
-                y_it_flag = True
-                break
-        if y_it_flag:
-            for y_it in range(y, -1, -1):
-                content = self.matrix[z][y_it][x]
-                if content == self.none_num:
-                    break
-                if content == self.kidney_num:
-                    return True
-
-        z_it_flag = False
-        for z_it in range(z, self.shape[2]):
-            content = self.matrix[z_it][y][x]
-            if content == self.none_num:
-                break
-            if content == self.kidney_num:
-                z_it_flag = True
-                break
-        if z_it_flag:
-            for z_it in range(z, -1, -1):
-                content = self.matrix[z_it][y][x]
-                if content == self.none_num:
-                    break
-                if content == self.kidney_num:
-                    return True
-
-        return False
-"""
 
 nii_path = 'data/KA53_20131213_nerka_guz_tetnice_ukm/D14F982C/guz nerka i tetnice/nerka i guz.nii.gz'
 renal = Renal(nii_path, 2, 6)
