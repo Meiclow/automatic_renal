@@ -13,6 +13,7 @@ class Renal:
         self.none_num = 0
         self.spacing = self.image.GetSpacing()
         self.tumor_count = np.count_nonzero(self.matrix == self.tumor_num)
+        self.tumor_count = np.count_nonzero(self.matrix == self.tumor_num)
 
     def get_radius(self):
         avg_spacing = np.power(self.spacing[0] * self.spacing[1] * self.spacing[2], 1. / 3.)
@@ -98,8 +99,52 @@ class Renal:
 
         return faces_count > 1
 
+    def get_location(self):
+        kidney_counts = []
+
+        for matrix_slice in self.matrix:
+            kidney_counts.append(np.count_nonzero(matrix_slice == self.kidney_num))
+
+        kidney_start = -1
+        kidney_stop = -1
+        for i in range(len(kidney_counts)):
+            if kidney_counts[i] != 0:
+                kidney_start = i
+                break
+        for i in range(len(kidney_counts)-1, -1, -1):
+            if kidney_counts[i] != 0:
+                kidney_stop = i
+                break
+
+        if kidney_start == -1 or kidney_stop == -1:
+            raise Exception("You have no kidney! Seek help!")
+
+        kidney_middle = (kidney_start + kidney_stop*2) // 3
+
+        max_down = -1
+        polar_line_down = -1
+        for i in range(kidney_start, kidney_middle):
+            if kidney_counts[i] > max_down:
+                max_down = kidney_counts[i]
+                polar_line_down = i
+
+        max_up = -1
+        polar_line_up = -1
+        for i in range(kidney_middle, kidney_stop):
+            if kidney_counts[i] > max_up:
+                max_up = kidney_counts[i]
+                polar_line_up = i
+
+        between_polar_lines_tumor_count = 0
+        for i in range(polar_line_down, polar_line_up+1):
+            between_polar_lines_tumor_count += np.count_nonzero(self.matrix[i] == self.tumor_num)
+
+        return between_polar_lines_tumor_count / self.tumor_count
+
+
 
 nii_path = 'data/KA53_20131213_nerka_guz_tetnice_ukm/D14F982C/guz nerka i tetnice/nerka i guz.nii.gz'
 renal = Renal(nii_path, 2, 6)
 print(renal.get_radius())
 print(renal.get_exophyticness())
+print(renal.get_location())
