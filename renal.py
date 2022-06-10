@@ -99,6 +99,34 @@ class Renal:
 
         return faces_count > 1
 
+    def get_nearness(self):
+        """
+        Get nearness to renal sinus or collecting system.
+
+        :return:
+        """
+
+        # hull = convex_hull(kidney)
+        # diff = hull - kidney
+        # distance = shortest_dist(diff, tumor)
+        # return distance
+
+        pass
+
+    def get_anterior(self):
+        """
+        Get anterior/posterior location i.e. whether the tumor is in front or back of the kidney.
+        :return:
+        """
+
+        kidney_indexes = np.argwhere(self.matrix == self.kidney_num)
+        kidney_center_of_mass = kidney_indexes.sum(axis=0) // len(kidney_indexes)
+
+        front_matrix = self.matrix[:, :, :kidney_center_of_mass]
+        fraction_of_tumor_in_front = front_matrix.where(front_matrix == self.tumor_num).size() / front_matrix.size()
+
+        return "Anterior" if fraction_of_tumor_in_front > 0.5 else "Posterior"
+
     def get_location(self):
         kidney_counts = []
 
@@ -148,3 +176,4 @@ renal = Renal(nii_path, 2, 6)
 print(renal.get_radius())
 print(renal.get_exophyticness())
 print(renal.get_location())
+
