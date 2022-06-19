@@ -1,5 +1,6 @@
 import SimpleITK as sitk
 import numpy as np
+from scipy import ndimage
 
 
 class Renal:
@@ -14,11 +15,17 @@ class Renal:
         self.spacing = self.image.GetSpacing()
         self.tumor_count = np.count_nonzero(self.matrix == self.tumor_num)
         self.tumor_count = np.count_nonzero(self.matrix == self.tumor_num)
+        self.tumor_radius = None
 
     def get_radius(self):
+        if self.tumor_radius:
+            return self.tumor_radius
+
         avg_spacing = np.power(self.spacing[0] * self.spacing[1] * self.spacing[2], 1. / 3.)
         radius_pixels = np.power(0.75 * self.tumor_count / np.pi, 1. / 3.)
         radius = avg_spacing * radius_pixels
+
+        self.tumor_radius = radius
 
         return radius
 
@@ -169,6 +176,48 @@ class Renal:
 
         return between_polar_lines_tumor_count / self.tumor_count
 
+    def get_c_index(self):
+
+        max_kidney_slice = -1
+        max_tumor_slice = -1
+
+        max_kidney_val = 1
+        max_tumor_val = 1
+
+        for i in range(len(self.matrix)):
+            matrix_slice = self.matrix[i]
+
+            kidney_val = np.count_nonzero(matrix_slice == self.kidney_num)
+            if kidney_val > max_kidney_val:
+                max_kidney_slice = i
+                max_kidney_val = kidney_val
+
+            tumor_val = np.count_nonzero(matrix_slice == self.tumor_num)
+            if tumor_val > max_tumor_val:
+                max_tumor_slice = i
+                max_tumor_val = tumor_val
+
+        if max_kidney_slice == -1:
+            raise Exception("No kidney found")
+        if max_tumor_slice == -1:
+            raise Exception("No tumor found")
+
+        avg_spacing = np.sqrt(self.spacing[0] * self.spacing[1])
+
+        kidney_slice = (lambda x: (x == self.kidney_num) * 1)(np.array(self.matrix[max_kidney_slice]))
+        tumor_slice = (lambda x: (x == self.tumor_num) * 1)(self.matrix[max_tumor_slice])
+
+        kidney_center = ndimage.measurements.center_of_mass(kidney_slice)
+        tumor_center = ndimage.measurements.center_of_mass(tumor_slice)
+
+        horizontal_dist = np.sqrt((kidney_center[0] - tumor_center[0])**2 + (kidney_center[1] - tumor_center[1])**2)
+        horizontal_dist *= avg_spacing
+        tumor_radius = self.get_radius()
+        c_index = horizontal_dist/tumor_radius
+
+        return c_index
+
+
 
 
 nii_path = 'data/KA53_20131213_nerka_guz_tetnice_ukm/D14F982C/guz nerka i tetnice/nerka i guz.nii.gz'
@@ -176,4 +225,5 @@ renal = Renal(nii_path, 2, 6)
 print(renal.get_radius())
 print(renal.get_exophyticness())
 print(renal.get_location())
-
+print(renal.get_anterior())
+print(renal.get_c_index())
