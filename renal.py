@@ -122,7 +122,7 @@ class Renal:
         kidney_indexes = np.argwhere(self.matrix == self.kidney_num)
         kidney_center_of_mass = kidney_indexes.sum(axis=0) // len(kidney_indexes)
 
-        front_matrix = self.matrix[:, :, :kidney_center_of_mass]
+        front_matrix = self.matrix[:, :, :kidney_center_of_mass[2]]
         fraction_of_tumor_in_front = front_matrix.where(front_matrix == self.tumor_num).size() / front_matrix.size()
 
         return "Anterior" if fraction_of_tumor_in_front > 0.5 else "Posterior"
