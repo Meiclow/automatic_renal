@@ -17,6 +17,64 @@ class Renal:
         self.tumor_count = np.count_nonzero(self.matrix == self.tumor_num)
         self.tumor_radius = None
 
+    def print_renal_scores(self):
+        r = self.get_radius()
+        e = self.get_exophyticness()
+
+        # TODO
+        # n = self.get_nearness()
+        n = 5
+
+        a = self.get_anterior()
+        l = self.get_location()
+
+        r_score = 1
+        if r > 7:
+            r_score = 3
+        elif r > 4:
+            r_score = 2
+
+        e_score = 1
+        if e > 0.99:
+            e_score = 3
+        elif e > 0.5:
+            e_score = 2
+
+        n_score = 1
+        if n < 4:
+            n_score = 3
+        elif n < 7:
+            n_score = 2
+
+        l_score = 1
+        if l > 0.5:
+            l_score = 3
+        elif l > 0.01:
+            l_score = 2
+
+        acronym = str(r_score + e_score + n_score + l_score) + a
+
+        print("Renal scores values:\n"
+              "Radius: " + str(r) + "\n"
+              "Exophyticness: " + str(e) + "\n"
+              "Nearness: " + str(n) + "\n"
+              "Anterior/Posterior: " + a + "\n"
+              "Location: " + str(l) + "\n")
+
+        print("Renal scores:\n"
+              "Radius: " + str(r_score) + "\n"
+              "Exophyticness: " + str(e_score) + "\n"
+              "Nearness: " + str(n_score) + "\n"
+              "Anterior/Posterior: " + a + "\n"
+              "Location: " + str(l_score) + "\n")
+
+        print("Renal acronym: " + acronym)
+
+    def print_c_index_score(self):
+        c_index = self.get_c_index()
+
+        print("C-index score: " + str(c_index))
+
     def get_radius(self):
         if self.tumor_radius:
             return self.tumor_radius
@@ -125,6 +183,8 @@ class Renal:
         Get anterior/posterior location i.e. whether the tumor is in front or back of the kidney.
         :return:
         """
+        # TODO
+        return "A"
 
         kidney_indexes = np.argwhere(self.matrix == self.kidney_num)
         kidney_center_of_mass = kidney_indexes.sum(axis=0) // len(kidney_indexes)
@@ -132,7 +192,7 @@ class Renal:
         front_matrix = self.matrix[:, :, :kidney_center_of_mass[2]]
         fraction_of_tumor_in_front = front_matrix.where(front_matrix == self.tumor_num).size() / front_matrix.size()
 
-        return "Anterior" if fraction_of_tumor_in_front > 0.5 else "Posterior"
+        return "A" if fraction_of_tumor_in_front > 0.5 else "P"
 
     def get_location(self):
         kidney_counts = []
@@ -221,12 +281,13 @@ class Renal:
         return c_index
 
 
-
-
 nii_path = 'data/KA53_20131213_nerka_guz_tetnice_ukm/D14F982C/guz nerka i tetnice/nerka i guz.nii.gz'
 renal = Renal(nii_path, 2, 6)
-print(renal.get_radius())
-print(renal.get_exophyticness())
-print(renal.get_location())
-print(renal.get_anterior())
-print(renal.get_c_index())
+# print(renal.get_radius())
+# print(renal.get_exophyticness())
+# print(renal.get_anterior())
+# print(renal.get_location())
+# print(renal.get_c_index())
+
+renal.print_c_index_score()
+renal.print_renal_scores()
