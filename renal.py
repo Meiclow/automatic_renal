@@ -178,14 +178,17 @@ class Renal:
 
     def get_c_index(self):
 
+        front_matrix = np.copy(self.matrix)
+        front_matrix = np.swapaxes(front_matrix, 0, 1)
+
         max_kidney_slice = -1
         max_tumor_slice = -1
 
         max_kidney_val = 1
         max_tumor_val = 1
 
-        for i in range(len(self.matrix)):
-            matrix_slice = self.matrix[i]
+        for i in range(len(front_matrix)):
+            matrix_slice = front_matrix[i]
 
             kidney_val = np.count_nonzero(matrix_slice == self.kidney_num)
             if kidney_val > max_kidney_val:
@@ -204,8 +207,8 @@ class Renal:
 
         avg_spacing = np.sqrt(self.spacing[0] * self.spacing[1])
 
-        kidney_slice = (lambda x: (x == self.kidney_num) * 1)(np.array(self.matrix[max_kidney_slice]))
-        tumor_slice = (lambda x: (x == self.tumor_num) * 1)(self.matrix[max_tumor_slice])
+        kidney_slice = (lambda x: (x == self.kidney_num) * 1)(np.array(front_matrix[max_kidney_slice]))
+        tumor_slice = (lambda x: (x == self.tumor_num) * 1)(front_matrix[max_tumor_slice])
 
         kidney_center = ndimage.measurements.center_of_mass(kidney_slice)
         tumor_center = ndimage.measurements.center_of_mass(tumor_slice)
