@@ -55,11 +55,11 @@ class Renal:
         acronym = str(r_score + e_score + n_score + l_score) + a
 
         print("Renal scores values:\n"
-              "Radius: " + str(r) + "\n"
-              "Exophyticness: " + str(e) + "\n"
-              "Nearness: " + str(n) + "\n"
+              "Radius: " + str(round(r, 2)) + "\n"
+              "Exophyticness: " + str(round(e, 2)) + "\n"
+              "Nearness: " + str(round(n, 2)) + "\n"
               "Anterior/Posterior: " + a + "\n"
-              "Location: " + str(l) + "\n")
+              "Location: " + str(round(l, 2)) + "\n")
 
         print("Renal scores:\n"
               "Radius: " + str(r_score) + "\n"
