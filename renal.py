@@ -73,7 +73,7 @@ class Renal:
     def print_c_index_score(self):
         c_index = self.get_c_index()
 
-        print("C-index score: " + str(c_index))
+        print("C-index score: " + str(round(c_index, 2)))
 
     def get_radius(self):
         if self.tumor_radius:
