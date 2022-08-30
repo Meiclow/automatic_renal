@@ -4,7 +4,6 @@ from scipy import ndimage
 
 
 class Renal:
-
     def __init__(self, image_path, kidney_num, tumor_num):
         self.image = sitk.ReadImage(image_path)
         self.matrix = np.array(sitk.GetArrayViewFromImage(self.image))
@@ -178,19 +177,32 @@ class Renal:
 
         pass
 
-    def get_anterior(self):
+    def get_anterior(self, version="center_of_mass"):
         """
         Get anterior/posterior location i.e. whether the tumor is in front or back of the kidney.
         :return:
         """
-        # TODO
-        return "A"
 
-        kidney_indexes = np.argwhere(self.matrix == self.kidney_num)
-        kidney_center_of_mass = kidney_indexes.sum(axis=0) // len(kidney_indexes)
+        y_cutoff = None
 
-        front_matrix = self.matrix[:, :, :kidney_center_of_mass[2]]
-        fraction_of_tumor_in_front = front_matrix.where(front_matrix == self.tumor_num).size() / front_matrix.size()
+        if version == "center_of_mass":
+            kidney_indexes = np.argwhere(self.matrix == self.kidney_num)
+            kidney_center_of_mass = kidney_indexes.sum(axis=0) // len(kidney_indexes)
+            y_cutoff = kidney_center_of_mass[1]
+        elif version == "largest_plane":
+            largest_plane_area = 0
+            for y in range(self.shape[1]):
+                area = np.count_nonzero(self.matrix[:, y, :] == self.kidney_num)
+                if area > largest_plane_area:
+                    y_cutoff = y
+                    largest_plane_area = area
+        else:
+            raise ValueError("Invalid version parameter. Use either 'center_of_mass' or 'largest_plane'")
+
+        front_matrix = self.matrix[:, :y_cutoff, :]
+        fraction_of_tumor_in_front = np.count_nonzero(front_matrix == self.tumor_num) / front_matrix.size
+
+        # print("Fraction of tumor in front: ", fraction_of_tumor_in_front)
 
         return "A" if fraction_of_tumor_in_front > 0.5 else "P"
 
