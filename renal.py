@@ -1,6 +1,8 @@
 import SimpleITK as sitk
 import numpy as np
 from scipy import ndimage
+from scipy.spatial import ConvexHull
+from collections import defaultdict
 
 
 class Renal:
@@ -13,7 +15,7 @@ class Renal:
         self.none_num = 0
         self.spacing = self.image.GetSpacing()
         self.tumor_count = np.count_nonzero(self.matrix == self.tumor_num)
-        self.tumor_count = np.count_nonzero(self.matrix == self.tumor_num)
+        self.kidney_count = np.count_nonzero(self.matrix == self.kidney_num)
         self.tumor_radius = None
 
     def print_renal_scores(self):
@@ -163,6 +165,13 @@ class Renal:
 
         return faces_count > 1
 
+    def _get_boundary_cube(self, points):
+        return np.mgrid[
+           np.amin(points[:, 0]): np.amax(points[:, 0]),
+           np.amin(points[:, 1]): np.amax(points[:, 1]),
+           np.amin(points[:, 2]): np.amax(points[:, 2])
+        ].transpose(1, 2, 3, 0).reshape(-1, 3)
+
     def get_nearness(self):
         """
         Get nearness to renal sinus or collecting system.
@@ -170,12 +179,87 @@ class Renal:
         :return:
         """
 
-        # hull = convex_hull(kidney)
-        # diff = hull - kidney
-        # distance = shortest_dist(diff, tumor)
-        # return distance
+        kidney_points = np.argwhere(self.matrix == self.kidney_num)
+        print(kidney_points)
+        hull = ConvexHull(kidney_points)
 
-        pass
+        all_points = self._get_boundary_cube(kidney_points)
+
+        convex_hull_voxels = []
+        # for points_chunk in np.array_split(all_points, len(all_points) // 1024):
+        #     points_chunk_with_ones = np.concatenate((points_chunk, np.ones((len(points_chunk), 1))), axis=1)
+        #     ind = np.argwhere(np.amax(points_chunk_with_ones @ hull.equations.T, axis=1) <= 0).reshape(-1)
+        #     print(ind.shape)
+        #     convex_hull_voxels.append(all_points[ind])
+        #
+        # convex_hull_voxels = np.concatenate(convex_hull_voxels, axis=0).reshape(-1, 3)
+
+        all_points_with_ones = np.concatenate([all_points, np.ones((len(all_points), 1))], axis=1)
+        for i in range(len(all_points)):
+            if np.amax(all_points_with_ones[i] @ hull.equations.T) <= 0:
+                convex_hull_voxels.append(all_points[i])
+
+        diff_points = set(tuple(p) for p in convex_hull_voxels) - set(tuple(p) for p in kidney_points)
+
+        print("Kidney volume: ", len(kidney_points))
+        print("Convex hull volume: ", len(convex_hull_voxels))
+        print("Difference volume: ", len(diff_points))
+
+        blank_matrix = np.zeros(self.matrix.shape)
+        for p in diff_points:
+            blank_matrix[p] = 1
+
+        visited_matrix = np.zeros(self.matrix.shape)
+        ssc_sizes = defaultdict(int)
+
+        i = 1
+        st = []
+        for p in diff_points:
+            if visited_matrix[p] == 0:
+                st.append(p)
+                while len(st) > 0:
+                    u = st.pop()
+                    if visited_matrix[u] == 0:
+                        ssc_sizes[p] += 1
+                        visited_matrix[u] = i
+                        i += 1
+                        for d in [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]:
+                            v = tuple(np.array(u) + np.array(d))
+                            if 0 <= v[0] < blank_matrix.shape[0] and \
+                                    0 <= v[1] < blank_matrix.shape[1] and \
+                                    0 <= v[2] < blank_matrix.shape[2] and \
+                                    blank_matrix[v] == 1 and visited_matrix[v] == 0:
+                                st.append(v)
+
+        largest_ssc_repr = sorted(list(ssc_sizes.keys()), key=lambda k: ssc_sizes[k], reverse=True)[0]
+        print("Largest_diff_size = ", ssc_sizes[largest_ssc_repr])
+
+        ssc_points = np.argwhere(visited_matrix == visited_matrix[largest_ssc_repr])
+        tumor_points = np.argwhere(self.matrix == self.tumor_num)
+
+        ssc_center_of_mass = ssc_points.sum(axis=0) // self.kidney_count
+        tumor_center_of_mass = tumor_points.sum(axis=0) // self.tumor_count
+
+        closest_ssc_point = sorted(
+            ssc_points,
+            key=lambda p: np.linalg.norm(p-tumor_center_of_mass),
+        )[0]
+
+        closest_tumor_point = sorted(
+            tumor_points,
+            key=lambda p: np.linalg.norm(p-ssc_center_of_mass),
+        )[0]
+
+        avg_spacing = np.sqrt(self.spacing[0] * self.spacing[1])
+
+        distance = np.linalg.norm(closest_tumor_point - closest_ssc_point) * avg_spacing
+        print("Distance: ", distance)
+        if distance < 4:
+            return 3
+        elif distance < 7:
+            return 2
+        else:
+            return 1
 
     def get_anterior(self, version="center_of_mass"):
         """
