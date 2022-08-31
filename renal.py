@@ -237,7 +237,7 @@ class Renal:
         ssc_points = np.argwhere(visited_matrix == visited_matrix[largest_ssc_repr])
         tumor_points = np.argwhere(self.matrix == self.tumor_num)
 
-        ssc_center_of_mass = ssc_points.sum(axis=0) // self.kidney_count
+        ssc_center_of_mass = ssc_points.sum(axis=0) // len(ssc_points)
         tumor_center_of_mass = tumor_points.sum(axis=0) // self.tumor_count
 
         closest_ssc_point = sorted(
