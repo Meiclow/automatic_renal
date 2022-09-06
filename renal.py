@@ -172,58 +172,49 @@ class Renal:
            np.amin(points[:, 2]): np.amax(points[:, 2])
         ].transpose(1, 2, 3, 0).reshape(-1, 3)
 
-    def get_nearness(self):
-        """
-        Get nearness to renal sinus or collecting system.
+    def _approximate_closest_distance(self, points_a, points_b):
+        a_center_of_mass = points_a.sum(axis=0) // len(points_a)
+        b_center_of_mass = points_b.sum(axis=0) // len(points_b)
 
-        :return:
-        """
+        closest_a_point = sorted(
+            points_a,
+            key=lambda p: np.linalg.norm(p-b_center_of_mass),
+        )[0]
 
-        kidney_points = np.argwhere(self.matrix == self.kidney_num)
-        print(kidney_points)
-        hull = ConvexHull(kidney_points)
+        closest_b_point = sorted(
+            points_b,
+            key=lambda p: np.linalg.norm(p-a_center_of_mass),
+        )[0]
 
-        all_points = self._get_boundary_cube(kidney_points)
+        closest_a_point = np.asarray(closest_a_point, dtype=np.float64) * self.spacing
+        closest_b_point = np.asarray(closest_b_point, dtype=np.float64) * self.spacing
 
-        convex_hull_voxels = []
-        # for points_chunk in np.array_split(all_points, len(all_points) // 1024):
-        #     points_chunk_with_ones = np.concatenate((points_chunk, np.ones((len(points_chunk), 1))), axis=1)
-        #     ind = np.argwhere(np.amax(points_chunk_with_ones @ hull.equations.T, axis=1) <= 0).reshape(-1)
-        #     print(ind.shape)
-        #     convex_hull_voxels.append(all_points[ind])
-        #
-        # convex_hull_voxels = np.concatenate(convex_hull_voxels, axis=0).reshape(-1, 3)
+        distance = np.linalg.norm(closest_a_point - closest_b_point)
+        return distance
 
-        all_points_with_ones = np.concatenate([all_points, np.ones((len(all_points), 1))], axis=1)
-        for i in range(len(all_points)):
-            if np.amax(all_points_with_ones[i] @ hull.equations.T) <= 0:
-                convex_hull_voxels.append(all_points[i])
-
-        diff_points = set(tuple(p) for p in convex_hull_voxels) - set(tuple(p) for p in kidney_points)
-
-        print("Kidney volume: ", len(kidney_points))
-        print("Convex hull volume: ", len(convex_hull_voxels))
-        print("Difference volume: ", len(diff_points))
-
-        blank_matrix = np.zeros(self.matrix.shape)
-        for p in diff_points:
+    def _get_largest_region(self, points, matrix_shape):
+        blank_matrix = np.zeros(matrix_shape)
+        for p in points:
             blank_matrix[p] = 1
 
         visited_matrix = np.zeros(self.matrix.shape)
         ssc_sizes = defaultdict(int)
 
-        i = 1
+        directions = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]
+        i = 0
         st = []
-        for p in diff_points:
+        for p in points:
             if visited_matrix[p] == 0:
                 st.append(p)
+                i += 1
                 while len(st) > 0:
                     u = st.pop()
+
+                    # dfs body
                     if visited_matrix[u] == 0:
                         ssc_sizes[p] += 1
                         visited_matrix[u] = i
-                        i += 1
-                        for d in [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]:
+                        for d in directions:
                             v = tuple(np.array(u) + np.array(d))
                             if 0 <= v[0] < blank_matrix.shape[0] and \
                                     0 <= v[1] < blank_matrix.shape[1] and \
@@ -232,28 +223,56 @@ class Renal:
                                 st.append(v)
 
         largest_ssc_repr = sorted(list(ssc_sizes.keys()), key=lambda k: ssc_sizes[k], reverse=True)[0]
-        print("Largest_diff_size = ", ssc_sizes[largest_ssc_repr])
+        largest_ssc_points = np.argwhere(visited_matrix == visited_matrix[largest_ssc_repr])
 
-        ssc_points = np.argwhere(visited_matrix == visited_matrix[largest_ssc_repr])
-        tumor_points = np.argwhere(self.matrix == self.tumor_num)
+        return largest_ssc_points
 
-        ssc_center_of_mass = ssc_points.sum(axis=0) // len(ssc_points)
-        tumor_center_of_mass = tumor_points.sum(axis=0) // self.tumor_count
+    def _get_convex_hull_voxels(self, points):
+        potential_hull_voxels = self._get_boundary_cube(points)
+        convex_hull_voxels = []
 
-        closest_ssc_point = sorted(
-            ssc_points,
-            key=lambda p: np.linalg.norm(p-tumor_center_of_mass),
-        )[0]
+        # for points_chunk in np.array_split(potential_hull_voxels, len(potential_hull_voxels) // 1024):
+        #     points_chunk_with_ones = np.concatenate((points_chunk, np.ones((len(points_chunk), 1))), axis=1)
+        #     ind = np.argwhere(np.amax(points_chunk_with_ones @ hull.equations.T, axis=1) <= 0).reshape(-1)
+        #     print(ind.shape)
+        #     convex_hull_voxels.append(potential_hull_voxels[ind])
+        #
+        # convex_hull_voxels = np.concatenate(convex_hull_voxels, axis=0).reshape(-1, 3)
 
-        closest_tumor_point = sorted(
-            tumor_points,
-            key=lambda p: np.linalg.norm(p-ssc_center_of_mass),
-        )[0]
+        hull = ConvexHull(points)
+        potential_hull_voxels_with_ones = np.concatenate([potential_hull_voxels, np.ones((len(potential_hull_voxels), 1))], axis=1)
+        for i in range(len(potential_hull_voxels)):
 
-        avg_spacing = np.sqrt(self.spacing[0] * self.spacing[1])
+            # check if the point is inside the hull
+            if np.amax(potential_hull_voxels_with_ones[i] @ hull.equations.T) <= 0:
+                convex_hull_voxels.append(potential_hull_voxels[i])
 
-        distance = np.linalg.norm(closest_tumor_point - closest_ssc_point) * avg_spacing
+        return convex_hull_voxels
+
+    def get_nearness(self):
+        """
+        Get nearness to renal sinus or collecting system.
+
+        :return:
+        """
+        kidney_voxels = np.argwhere(self.matrix == self.kidney_num)
+        print("Kidney volume: ", len(kidney_voxels))
+
+        convex_hull_voxels = self._get_convex_hull_voxels(kidney_voxels)
+        print("Convex hull volume: ", len(convex_hull_voxels))
+
+        diff_voxels = set(tuple(p) for p in convex_hull_voxels) - set(tuple(p) for p in kidney_voxels)
+        print("Difference volume: ", len(diff_voxels))
+
+        ssc_voxels = self._get_largest_region(diff_voxels, self.matrix.shape)
+        print("Largest diff region volume: ", len(ssc_voxels))
+
+        tumor_voxels = np.argwhere(self.matrix == self.tumor_num)
+        print("Tumor volume: ", len(tumor_voxels))
+
+        distance = self._approximate_closest_distance(tumor_voxels, ssc_voxels)
         print("Distance: ", distance)
+
         if distance < 4:
             return 3
         elif distance < 7:
