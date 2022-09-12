@@ -10,22 +10,28 @@ class Renal:
         self.image = sitk.ReadImage(image_path)
         self.matrix = np.array(sitk.GetArrayViewFromImage(self.image))
         self.shape = self.matrix.shape
+
+        if type(kidney_num) == str:
+            kidney_num = int(kidney_num.split(",")[-1])
+        if type(tumor_num) == str:
+            tumor_num = int(tumor_num.split(",")[-1])
+
         self.kidney_num = kidney_num
         self.tumor_num = tumor_num
         self.none_num = 0
         self.spacing = self.image.GetSpacing()
         self.tumor_count = np.count_nonzero(self.matrix == self.tumor_num)
         self.kidney_count = np.count_nonzero(self.matrix == self.kidney_num)
+        if self.tumor_count == 0:
+            raise Exception("Tumor segmentation not found", self.tumor_num, image_path)
+        if self.kidney_count == 0:
+            raise Exception("Kidney segmentation not found", self.kidney_num, image_path)
         self.tumor_radius = None
 
-    def print_renal_scores(self):
+    def get_all_scores(self):
         r = self.get_radius()
         e = self.get_exophyticness()
-
-        # TODO
-        # n = self.get_nearness()
-        n = 5
-
+        n = self.get_nearness()
         a = self.get_anterior()
         l = self.get_location()
 
@@ -55,21 +61,18 @@ class Renal:
 
         acronym = str(r_score + e_score + n_score + l_score) + a
 
-        print("Renal scores values:\n"
-              "Radius: " + str(round(r, 2)) + "\n"
-              "Exophyticness: " + str(round(e, 2)) + "\n"
-              "Nearness: " + str(round(n, 2)) + "\n"
-              "Anterior/Posterior: " + a + "\n"
-              "Location: " + str(round(l, 2)) + "\n")
-
-        print("Renal scores:\n"
-              "Radius: " + str(r_score) + "\n"
-              "Exophyticness: " + str(e_score) + "\n"
-              "Nearness: " + str(n_score) + "\n"
-              "Anterior/Posterior: " + a + "\n"
-              "Location: " + str(l_score) + "\n")
-
-        print("Renal acronym: " + acronym)
+        return {
+            "Radius": round(r, 2),
+            "Exophyticness": round(e, 2),
+            "Nearness": round(n, 2),
+            "Location": round(l, 2),
+            "Radius_score": r_score,
+            "Exophyticness_score": e_score,
+            "Nearness_score": n_score,
+            "Anterior/Posterior_score": a,
+            "Location_score": l_score,
+            "Acronym": acronym,
+        }
 
     def print_c_index_score(self):
         c_index = self.get_c_index()
@@ -88,16 +91,23 @@ class Renal:
 
         return radius
 
-    def get_exophyticness(self):
-        inside = 0
+    def get_exophyticness(self, version="convex_hull"):
+        if version == "ray_tracing":
+            inside = 0
 
-        for x in range(self.shape[2]):
-            for y in range(self.shape[1]):
-                for z in range(self.shape[0]):
-                    if self.matrix[z][y][x] == self.tumor_num and self._inside_kidney_periphery(x, y, z):
-                        inside += 1
+            for x in range(self.shape[2]):
+                for y in range(self.shape[1]):
+                    for z in range(self.shape[0]):
+                        if self.matrix[z][y][x] == self.tumor_num and self._inside_kidney_periphery(x, y, z):
+                            inside += 1
+            return inside / self.tumor_count
+        elif version == "convex_hull":
+            kidney_voxels = np.argwhere(self.matrix == self.kidney_num)
+            convex_hull_voxels = self._get_convex_hull_voxels(kidney_voxels)
+            tumor_voxels = np.argwhere(self.matrix == self.tumor_num)
+            overlap = set(tuple(p) for p in convex_hull_voxels) & set(tuple(p) for p in tumor_voxels)
 
-        return inside / self.tumor_count
+            return len(overlap) / len(tumor_voxels)
 
     def _inside_kidney_periphery(self, x, y, z):
 
@@ -178,12 +188,12 @@ class Renal:
 
         closest_a_point = sorted(
             points_a,
-            key=lambda p: np.linalg.norm(p-b_center_of_mass),
+            key=lambda p: np.linalg.norm(p - b_center_of_mass),
         )[0]
 
         closest_b_point = sorted(
             points_b,
-            key=lambda p: np.linalg.norm(p-a_center_of_mass),
+            key=lambda p: np.linalg.norm(p - a_center_of_mass),
         )[0]
 
         closest_a_point = np.asarray(closest_a_point, dtype=np.float64) * self.spacing
@@ -240,7 +250,11 @@ class Renal:
         # convex_hull_voxels = np.concatenate(convex_hull_voxels, axis=0).reshape(-1, 3)
 
         hull = ConvexHull(points)
-        potential_hull_voxels_with_ones = np.concatenate([potential_hull_voxels, np.ones((len(potential_hull_voxels), 1))], axis=1)
+        potential_hull_voxels_with_ones = np.concatenate(
+            [potential_hull_voxels, np.ones((len(potential_hull_voxels), 1))],
+            axis=1
+        )
+
         for i in range(len(potential_hull_voxels)):
 
             # check if the point is inside the hull
@@ -273,14 +287,9 @@ class Renal:
         distance = self._approximate_closest_distance(tumor_voxels, ssc_voxels)
         print("Distance: ", distance)
 
-        if distance < 4:
-            return 3
-        elif distance < 7:
-            return 2
-        else:
-            return 1
+        return distance
 
-    def get_anterior(self, version="center_of_mass"):
+    def get_anterior(self, version="largest_plane"):
         """
         Get anterior/posterior location i.e. whether the tumor is in front or back of the kidney.
         :return:
@@ -321,7 +330,7 @@ class Renal:
             if kidney_counts[i] != 0:
                 kidney_start = i
                 break
-        for i in range(len(kidney_counts)-1, -1, -1):
+        for i in range(len(kidney_counts) - 1, -1, -1):
             if kidney_counts[i] != 0:
                 kidney_stop = i
                 break
@@ -329,7 +338,7 @@ class Renal:
         if kidney_start == -1 or kidney_stop == -1:
             raise Exception("You have no kidney! Seek help!")
 
-        kidney_middle = (kidney_start + kidney_stop*2) // 3
+        kidney_middle = (kidney_start + kidney_stop * 2) // 3
 
         max_down = -1
         polar_line_down = -1
@@ -346,7 +355,7 @@ class Renal:
                 polar_line_up = i
 
         between_polar_lines_tumor_count = 0
-        for i in range(polar_line_down, polar_line_up+1):
+        for i in range(polar_line_down, polar_line_up + 1):
             between_polar_lines_tumor_count += np.count_nonzero(self.matrix[i] == self.tumor_num)
 
         return between_polar_lines_tumor_count / self.tumor_count
@@ -388,10 +397,10 @@ class Renal:
         kidney_center = ndimage.measurements.center_of_mass(kidney_slice)
         tumor_center = ndimage.measurements.center_of_mass(tumor_slice)
 
-        horizontal_dist = np.sqrt((kidney_center[0] - tumor_center[0])**2 + (kidney_center[1] - tumor_center[1])**2)
+        horizontal_dist = np.sqrt((kidney_center[0] - tumor_center[0]) ** 2 + (kidney_center[1] - tumor_center[1]) ** 2)
         horizontal_dist *= avg_spacing
         tumor_radius = self.get_radius()
-        c_index = horizontal_dist/tumor_radius
+        c_index = horizontal_dist / tumor_radius
 
         return c_index
 
